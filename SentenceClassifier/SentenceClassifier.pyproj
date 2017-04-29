@@ -26,6 +26,7 @@
   </ItemGroup>
   <ItemGroup>
     <Content Include="PredictData.txt" />
+    <Content Include="requirements.txt" />
     <Content Include="trainingdata.txt" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
