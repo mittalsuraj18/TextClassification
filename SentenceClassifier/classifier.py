@@ -1,290 +1,204 @@
-'''
-This script perfoms the basic process for applying a machine learning
-algorithm to a dataset using Python libraries.
-
-The four steps are:
-   1. Download a dataset (using pandas)
-   2. Process the numeric data (using numpy)
-   3. Train and evaluate learners (using scikit-learn)
-   4. Plot and compare results (using matplotlib)
-
-
-The data is downloaded from URL, which is defined below. As is normal
-for machine learning problems, the nature of the source data affects
-the entire solution. When you change URL to refer to your own data, you
-will need to review the data processing steps to ensure they remain
-correct.
-
-============
-Example Data
-============
-The example is from http://mlr.cs.umass.edu/ml/datasets/Spambase
-It contains pre-processed metrics, such as the frequency of certain
-words and letters, from a collection of emails. A classification for
-each one indicating 'spam' or 'not spam' is in the final column.
-See the linked page for full details of the data set.
-
-This script uses three classifiers to predict the class of an email
-based on the metrics. These are not representative of modern spam
-detection systems.
-'''
-
-# Remember to update the script for the new data when you change this URL
-URL = "http://mlr.cs.umass.edu/ml/machine-learning-databases/spambase/spambase.data"
-
-# Uncomment this call when using matplotlib to generate images
-# rather than displaying interactive UI.
-#import matplotlib
-#matplotlib.use('Agg')
-
-from pandas import read_table
+from nltk.stem import PorterStemmer
+from nltk.tokenize import word_tokenize
+from nltk.corpus import stopwords
+import nltk
+import pickle
 import numpy as np
-import matplotlib.pyplot as plt
 
-try:
-    # [OPTIONAL] Seaborn makes plots nicer
-    import seaborn
-except ImportError:
-    pass
-
-# =====================================================================
-
-def download_data():
-    '''
-    Downloads the data for this script into a pandas DataFrame.
-    '''
-
-    # If your data is in an Excel file, install 'xlrd' and use
-    # pandas.read_excel instead of read_table
-    #from pandas import read_excel
-    #frame = read_excel(URL)
-
-    # If your data is in a private Azure blob, install 'azure' and use
-    # BlobService.get_blob_to_path() with read_table() or read_excel()
-    #import azure.storage
-    #service = azure.storage.BlobService(ACCOUNT_NAME, ACCOUNT_KEY)
-    #service.get_blob_to_path(container_name, blob_name, 'my_data.csv')
-    #frame = read_table('my_data.csv', ...
-
-    frame = read_table(
-        URL,
-        
-        # Uncomment if the file needs to be decompressed
-        #compression='gzip',
-        #compression='bz2',
-
-        # Specify the file encoding
-        # Latin-1 is common for data from US sources
-        encoding='latin-1',
-        #encoding='utf-8',  # UTF-8 is also common
-
-        # Specify the separator in the data
-        sep=',',            # comma separated values
-        #sep='\t',          # tab separated values
-        #sep=' ',           # space separated values
-
-        # Ignore spaces after the separator
-        skipinitialspace=True,
-
-        # Generate row labels from each row number
-        index_col=None,
-        #index_col=0,       # use the first column as row labels
-        #index_col=-1,      # use the last column as row labels
-
-        # Generate column headers row from each column number
-        header=None,
-        #header=0,          # use the first line as headers
-
-        # Use manual headers and skip the first row in the file
-        #header=0,
-        #names=['col1', 'col2', ...],
-    )
-
-    # Return a subset of the columns
-    #return frame[['col1', 'col4', ...]]
-
-    # Return the entire frame
-    return frame
-
-
-# =====================================================================
-
-
-def get_features_and_labels(frame):
-    '''
-    Transforms and scales the input data and returns numpy arrays for
-    training and testing inputs and targets.
-    '''
-
-    # Replace missing values with 0.0, or we can use
-    # scikit-learn to calculate missing values (below)
-    #frame[frame.isnull()] = 0.0
-
-    # Convert values to floats
-    arr = np.array(frame, dtype=np.float)
-
-    # Use the last column as the target value
-    X, y = arr[:, :-1], arr[:, -1]
-    # To use the first column instead, change the index value
-    #X, y = arr[:, 1:], arr[:, 0]
+def linefeatures(filename):
+    try:
+        picklefile = open('vocabdict.pickle','rb+')
+        vocab_dict = pickle.load(picklefile)
+        if vocab_dict != None:
+            return vocab_dict
+    except:
+        pass
     
-    # Use 80% of the data for training; test against the rest
-    from sklearn.cross_validation import train_test_split
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+    stem = PorterStemmer()
+    raw_text = open(filename).read()
+    tokenized_words = word_tokenize(raw_text)
+    unique_list = nltk.unique_list(tokenized_words)
+    #print(unique_list)
+    stop = set(stopwords.words('english'))
+    new_list = []
+    for word in unique_list:
+        if(word.lower().isdigit()):
+            continue
+        word = stem.stem(word)
+        if (word not in stop):
+            new_list.append(word)
+    unique_list = nltk.unique_list(new_list)
+    i = 0
+    vocab_dict = {}
+    #print(unique_list)
+    for word in unique_list:
+       vocab_dict[word] = i
+       #vocab_dict[word] = i;
+       i+=1
+    #print(vocab_dict)
+    with open('vocabdict.pickle','wb+') as picklefile:
+        pickle.dump(vocab_dict,picklefile)
+    return vocab_dict
 
-    # sklearn.pipeline.make_pipeline could also be used to chain 
-    # processing and classification into a black box, but here we do
-    # them separately.
+
+def getPredictX(vocab_dict):
+    feature_len = len(vocab_dict)
+    X,_ = readData('PredictData.txt')
+    count=0
+    numpy_X = np.empty([len(X),feature_len],dtype=np.float)
+    for line in X:
+        line_array = np.zeros([1,feature_len],dtype=np.float)
+        for word in line:
+            index = vocab_dict.get(word)
+            if index!=None:
+                line_array[0,index-1]=1;
+        numpy_X[count] = line_array
+        count+=1;
+    return numpy_X;
+
+
+def readData(filename):
     
-    # If values are missing we could impute them from the training data
-    #from sklearn.preprocessing import Imputer
-    #imputer = Imputer(strategy='mean')
-    #imputer.fit(X_train)
-    #X_train = imputer.transform(X_train)
-    #X_test = imputer.transform(X_test)
+    X = [[]]
+    Y = []
+    stop = set(stopwords.words('english'))
+    stem = PorterStemmer()
+    with open(filename) as file:
+        for line in file:
+            tokenized_line = word_tokenize(line)
+            line_list = []
+            for word in tokenized_line:
+                word = stem.stem(word)
+                if(word.isdigit()):
+                    Y.append(int(word))
+                    continue
+                elif(word not in stop):
+                    line_list.append(word)
+                #print(line_list)
+            line_list = list(nltk.unique_list(line_list))
+            X.append(line_list)
+            #print(line_list)
+    X = X[2:]
+    #print(len(X))
+    Y = Y[1:]
+    #print(len(Y))
+    #print(Y)
+    return X,Y
+
+def createFeatureSet(feature_len,vocab_dict,read_data_function):
+    try:
+        fileX = open('X.pickle','rb+')
+        fileY = open('Y.pickle','rb+')
+        numpy_X = pickle.load(fileX)
+        numpy_Y = pickle.load(fileY)
+        if(numpy_X != None and numpy_Y != None):
+            fileX.close()
+            fileY.close()
+            return numpy_X,numpy_Y
+    except :
+        pass
+    X,Y = readData('trainingdata.txt')
+    count=0
+    numpy_X = np.empty([len(X),feature_len],dtype=np.float)
+    for line in X:
+        line_array = np.zeros([1,feature_len],dtype=np.float)
+        for word in line:
+            index = vocab_dict.get(word)
+            if index!=None:
+                line_array[0,index-1]=1;
+        numpy_X[count] = line_array
+        count+=1;
+    #print(Y)
+    #for category in Y:
+    #    temp= np.array([1],dtype=np.float)
+    #    temp[0] = category
+    #    numpy_Y += temp
+    #print (len(numpy_X),len(numpy_Y))
+    numpy_Y = np.empty([len(Y),8],dtype=np.float)
+    count=0
+    for category in Y:
+        temp = np.zeros([1,8],dtype=np.float)
+        temp[0,category-1]=1
+        numpy_Y[count]=temp
+        count+=1
+    #numpy_Y = np.transpose(numpy_Y)
+    #print(numpy_Y)
+    fileX = open('X.pickle','wb')
+    fileY = open('Y.pickle','wb')
+    pickle.dump(numpy_X,fileX)
+    pickle.dump(numpy_Y,fileY)
+    fileX.close()
+    fileY.close()
+    return numpy_X,numpy_Y
+
+
+def get_X_Y():
+
+    vocab_dict = linefeatures('trainingdata.txt')
+
+    #X,Y = readData('trainingdata.txt')
+
+    #print(len(vocab_dict),len(X),len(Y));
+
+    X,Y=createFeatureSet(len(vocab_dict),vocab_dict,read_data_function=readData)
+
+    import keras.utils as utils
+
+    #Y=utils.to_categorical(Y,num_classes=9)
+    #print(Y)
+    return X,Y,vocab_dict
+
+def getTrainingandValidation(X,Y):
+    from sklearn.model_selection import train_test_split
+    X_train, X_test, y_train, y_test=train_test_split(X,Y,test_size=0.2)
+    return X_train,X_test,y_train,y_test
+
+def generate_model(input_length_col):
+    from keras.models import Sequential
+    from keras.layers import Dense, Dropout, Activation
+    from keras.optimizers import adam
+
+    model = Sequential()
+    model.add(Dense(64, activation='relu', input_dim=input_length_col))
+    model.add(Dropout(0.5))
+    model.add(Dense(64, activation='relu'))
+    model.add(Dropout(0.5))
+    model.add(Dense(8, activation='softmax'))
+    model.compile(optimizer='adam',loss='categorical_crossentropy',metrics=['accuracy'])
+    return model
+
+def main():
+    X,Y,vocab_dict = get_X_Y()
+    #X_predict = X[-1,:]
+    #X = X[1:-2,:]
+    #print(len(X))
+    ##print(X_predict)
+    X_train,X_test,y_train,y_test = getTrainingandValidation(X,Y)
+
+    model = generate_model(len(X_train[1]))
+    model.fit(X_train, y_train,
+          epochs=10,
+          batch_size=128)
     
-    # Normalize the attribute values to mean=0 and variance=1
-    from sklearn.preprocessing import StandardScaler
-    scaler = StandardScaler()
-    # To scale to a specified range, use MinMaxScaler
-    #from sklearn.preprocessing import MinMaxScaler
-    #scaler = MinMaxScaler(feature_range=(0, 1))
+    score = model.evaluate(X_test, y_test, batch_size=128)
+    print(score)
+
+    predict_X = getPredictX(vocab_dict)
+    solns = model.predict(predict_X)
+    maximum = solns.max(axis=1)
+    for value in maximum:
+        for i in range(0,len(solns)):
+            for j in range(0,len(solns[0])):
+                if(value==solns[i,j]):
+                    print(j+1)
     
-    # Fit the scaler based on the training data, then apply the same
-    # scaling to both training and test sets.
-    scaler.fit(X_train)
-    X_train = scaler.transform(X_train)
-    X_test = scaler.transform(X_test)
-
-    # Return the training and test sets
-    return X_train, X_test, y_train, y_test
-
-
-# =====================================================================
-
-
-def evaluate_classifier(X_train, X_test, y_train, y_test):
-    '''
-    Run multiple times with different classifiers to get an idea of the
-    relative performance of each configuration.
-
-    Returns a sequence of tuples containing:
-        (title, precision, recall)
-    for each learner.
-    '''
-
-    # Import some classifiers to test
-    from sklearn.svm import LinearSVC, NuSVC
-    from sklearn.ensemble import AdaBoostClassifier
-
-    # We will calculate the P-R curve for each classifier
-    from sklearn.metrics import precision_recall_curve, f1_score
     
-    # Here we create classifiers with default parameters. These need
-    # to be adjusted to obtain optimal performance on your data set.
     
-    # Test the linear support vector classifier
-    classifier = LinearSVC(C=1)
-    # Fit the classifier
-    classifier.fit(X_train, y_train)
-    score = f1_score(y_test, classifier.predict(X_test))
-    # Generate the P-R curve
-    y_prob = classifier.decision_function(X_test)
-    precision, recall, _ = precision_recall_curve(y_test, y_prob)
-    # Include the score in the title
-    yield 'Linear SVC (F1 score={:.3f})'.format(score), precision, recall
-
-    # Test the Nu support vector classifier
-    classifier = NuSVC(kernel='rbf', nu=0.5, gamma=1e-3)
-    # Fit the classifier
-    classifier.fit(X_train, y_train)
-    score = f1_score(y_test, classifier.predict(X_test))
-    # Generate the P-R curve
-    y_prob = classifier.decision_function(X_test)
-    precision, recall, _ = precision_recall_curve(y_test, y_prob)
-    # Include the score in the title
-    yield 'NuSVC (F1 score={:.3f})'.format(score), precision, recall
-
-    # Test the Ada boost classifier
-    classifier = AdaBoostClassifier(n_estimators=50, learning_rate=1.0, algorithm='SAMME.R')
-    # Fit the classifier
-    classifier.fit(X_train, y_train)
-    score = f1_score(y_test, classifier.predict(X_test))
-    # Generate the P-R curve
-    y_prob = classifier.decision_function(X_test)
-    precision, recall, _ = precision_recall_curve(y_test, y_prob)
-    # Include the score in the title
-    yield 'Ada Boost (F1 score={:.3f})'.format(score), precision, recall
-
-# =====================================================================
-
-
-def plot(results):
-    '''
-    Create a plot comparing multiple learners.
-
-    `results` is a list of tuples containing:
-        (title, precision, recall)
     
-    All the elements in results will be plotted.
-    '''
+    
 
-    # Plot the precision-recall curves
-
-    fig = plt.figure(figsize=(6, 6))
-    fig.canvas.set_window_title('Classifying data from ' + URL)
-
-    for label, precision, recall in results:
-        plt.plot(recall, precision, label=label)
-
-    plt.title('Precision-Recall Curves')
-    plt.xlabel('Precision')
-    plt.ylabel('Recall')
-    plt.legend(loc='lower left')
-
-    # Let matplotlib improve the layout
-    plt.tight_layout()
-
-    # ==================================
-    # Display the plot in interactive UI
-    plt.show()
-
-    # To save the plot to an image file, use savefig()
-    #plt.savefig('plot.png')
-
-    # Open the image file with the default image viewer
-    #import subprocess
-    #subprocess.Popen('plot.png', shell=True)
-
-    # To save the plot to an image in memory, use BytesIO and savefig()
-    # This can then be written to any stream-like object, such as a
-    # file or HTTP response.
-    #from io import BytesIO
-    #img_stream = BytesIO()
-    #plt.savefig(img_stream, fmt='png')
-    #img_bytes = img_stream.getvalue()
-    #print('Image is {} bytes - {!r}'.format(len(img_bytes), img_bytes[:8] + b'...'))
-
-    # Closing the figure allows matplotlib to release the memory used.
-    plt.close()
+if __name__ == "__main__":
+    import sys
+    sys.exit(int(main() or 0))
 
 
-# =====================================================================
-
-
-if __name__ == '__main__':
-    # Download the data set from URL
-    print("Downloading data from {}".format(URL))
-    frame = download_data()
-
-    # Process data into feature and label arrays
-    print("Processing {} samples with {} attributes".format(len(frame.index), len(frame.columns)))
-    X_train, X_test, y_train, y_test = get_features_and_labels(frame)
-
-    # Evaluate multiple classifiers on the data
-    print("Evaluating classifiers")
-    results = list(evaluate_classifier(X_train, X_test, y_train, y_test))
-
-    # Display the results
-    print("Plotting the results")
-    plot(results)
